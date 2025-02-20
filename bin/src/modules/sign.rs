@@ -1,12 +1,13 @@
 use std::{
     fs::{create_dir_all, File},
     sync::Arc,
+    path::PathBuf,
 };
 
 use git2::Repository;
 use hemtt_common::prefix::FILES;
 use hemtt_pbo::ReadablePbo;
-use hemtt_signing::BIPrivateKey;
+use hemtt_signing::{BIPrivateKey, BIPublicKey};
 use hemtt_workspace::{
     addons::Location,
     reporting::{Code, Diagnostic},
@@ -65,21 +66,42 @@ impl Module for Sign {
 
     fn pre_release(&self, ctx: &Context) -> Result<Report, Error> {
         let authority = get_authority(ctx, None)?;
-        let addons_key = BIPrivateKey::generate(1024, &authority)?;
+
+        let dsutils_filepath = PathBuf::from("D:\\Steam\\steamapps\\common\\DayZ Tools\\Bin\\DsUtils");
+
+        let private_key_filename = format!("{authority}.biprivatekey");
+        // read existing private key from file
+        let addons_key =
+        BIPrivateKey::read(&mut File::open(dsutils_filepath.join(private_key_filename.clone())).unwrap()).unwrap();
+
+        //let addons_key = BIPrivateKey::generate(1024, &authority)?;
+        // create the keys folder
         create_dir_all(
             ctx.build_folder()
                 .expect("build folder exists")
                 .join("keys"),
         )?;
-        addons_key.to_public_key().write(&mut File::create(
+
+        // get the bikey
+        let bikey_filename = format!("{authority}.bikey");
+        let bikey = BIPublicKey::read(&mut File::open(dsutils_filepath.join(bikey_filename)).unwrap()).unwrap();
+
+        // write the bikey to our folders
+        bikey.write(&mut File::create(
             ctx.build_folder()
                 .expect("build folder exists")
                 .join("keys")
                 .join(format!("{authority}.bikey")),
         )?)?;
+
+        // for each addon to process
         ctx.addons().to_vec().par_iter().try_for_each(|addon| {
+            // get the addon name
             let pbo_name = addon.pbo_name(ctx.config().prefix());
-            let (mut pbo, sig_location, key) = match addon.location() {
+
+            let pbo1_name = pbo_name.clone();
+            // pack up data into a nice object
+            let (mut pbo, sig_location, pbo_location, key) = match addon.location() {
                 Location::Addons => {
                     let target_pbo = {
                         let mut path = ctx
@@ -93,10 +115,12 @@ impl Module for Sign {
                     (
                         ReadablePbo::from(File::open(&target_pbo)?)?,
                         target_pbo.with_extension(format!("pbo.{authority}.bisign")),
+                        target_pbo.with_extension(format!("pbo")),
                         addons_key.clone(),
                     )
                 }
                 Location::Optionals => {
+                    println!("Optionals. you shouldn ot be here");
                     let (mut target_pbo, key, authority) =
                         if ctx.config().hemtt().build().optional_mod_folders() {
                             let authority = get_authority(ctx, Some(&pbo_name))?;
@@ -128,13 +152,24 @@ impl Module for Sign {
                     (
                         ReadablePbo::from(File::open(&target_pbo)?)?,
                         target_pbo.with_extension(format!("pbo.{authority}.bisign")),
+                        target_pbo.with_extension(format!("pbo.{authority}.bisign")),
                         key,
                     )
                 }
             };
             debug!("signing {:?}", sig_location.display());
-            let sig = key.sign(&mut pbo, ctx.config().signing().version())?;
-            sig.write(&mut File::create(sig_location)?)?;
+            // println!("signing {:?}", dsutils_filepath.join(private_key_filename.clone()).display());
+            // println!("signing {:?}", pbo_location.display());
+            use std::process::Command;
+
+            let my_command = Command::new("DSSignFile.exe")
+                .args([dsutils_filepath.join(private_key_filename.clone()).display().to_string(), pbo_location.display().to_string()])
+                .spawn()
+                .expect("ls command failed to start");
+
+            // println!("{}", format!("{:?}", my_command));
+            // let sig = key.sign(&mut pbo, ctx.config().signing().version())?;
+            // sig.write(&mut File::create(sig_location)?)?;
             Result::<(), Error>::Ok(())
         })?;
         Ok(Report::new())
@@ -142,16 +177,16 @@ impl Module for Sign {
 }
 
 pub fn get_authority(ctx: &Context, suffix: Option<&str>) -> Result<String, Error> {
-    let mut authority = format!(
-        "{}_{}",
+    let authority = format!(
+        "{}",
         ctx.config().signing().authority().map_or_else(
             || ctx.config().prefix().to_string(),
             std::string::ToString::to_string
-        ),
-        ctx.config().version().get(ctx.workspace_path().vfs())?
+        )
     );
-    if let Some(suffix) = suffix {
-        authority.push_str(&format!("_{suffix}"));
+    // turn off the build number suffix
+    if let Some(_suffix) = suffix {
+        // authority.push_str(&format!("_{suffix}"));
     }
     Ok(authority)
 }

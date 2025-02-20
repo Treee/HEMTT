@@ -74,7 +74,10 @@ impl Module for Binarize {
             };
             PathBuf::from(path)
         };
-        let path = folder.join("binarize_x64.exe");
+        // arma3 specific
+        // let path = folder.join("binarize_x64.exe");
+        // dayz specific
+        let path = folder.join("binarize.exe");
         if path.exists() {
             self.command = Some(path.display().to_string());
         } else {
@@ -304,7 +307,7 @@ impl Module for Binarize {
                     let mut cmd = Command::new({
                         home.join(".local/share/Steam/steamapps/common/SteamLinuxRuntime_sniper/run")
                     });
-                    cmd.env("STEAM_COMPAT_CLIENT_INSTALL_PATH", 
+                    cmd.env("STEAM_COMPAT_CLIENT_INSTALL_PATH",
                         home.join(".local/share/Steam")
                     ).env(
                         "STEAM_COMPAT_DATA_PATH",
@@ -324,10 +327,13 @@ impl Module for Binarize {
                     cmd
                 };
                 cmd.args([
-                    "-norecurse",
-                    "-always",
-                    "-silent",
-                    "-maxProcesses=0",
+                    "-targetBonesInterval=56",
+                    "-textures=P:\\temp",
+                    "-binPath=P:\\",
+                    "-maxProcesses=8",
+                    // "-always",
+                    // "-norecurse",
+                    // "-silent",
                     &target
                         .source
                         .trim_start_matches(ctx.tmp().to_str().expect("path is valid utf-8"))
